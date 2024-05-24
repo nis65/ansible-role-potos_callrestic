@@ -1,7 +1,6 @@
 ---
 
-# Example variable
-potos_template_example_var: 'hello world!'
-
-# List of items used for action xyz
-potos_template_example_list: []
+# where to get the restic binary from
+potos_callrestic_url: "https://github.com/restic/restic/releases/download/v0.16.4/restic_0.16.4_linux_amd64.bz2"
+potos_callrestic_dest: "/var/tmp/restic_0.16.4_linux_amd64.bz2"
+potos_callrestic_sha256sum: "3d4d43c169a9e28ea76303b1e8b810f0dcede7478555fdaa8959971ad499e324"

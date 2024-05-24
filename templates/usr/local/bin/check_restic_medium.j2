@@ -1,0 +1,126 @@
+#!/usr/bin/bash
+# {{ ansible_managed }}
+# searches all media found below $MEDIADIR and outputs on stdout 
+# a line per medium, e.g.:
+#
+# MWR /media/nicolas/9016-4EF8
+# MWr /media/nicolas/newusbstick
+# 
+# the first three letters are flags for "M"edia, "W"ritable and "R"restic repo.
+# UPPERCASE means yes, lowercase means no.
+
+MEDIADIR=/media/$USER
+
+if [[ -z "$USER" ]]
+then
+  echo "Need \$USER to be set, aborting"
+  exit 1
+fi
+
+REPOBASEDIRDEFAULT="restic_${USER}"
+
+myusage () {
+  echo ""
+  echo "Usage: $0 [repobasedir]"
+  echo "  repobasedir: the first level directory where the restic"
+  echo "               backup data is put on the backup medium"
+  echo "               default: $REPOBASEDIRDEFAULT"
+  echo ""
+  exit 1
+}
+
+REPOBASEDIR=${1:-$REPOBASEDIRDEFAULT}
+
+MEDIUM=undef
+WRITE=undef
+RESTIC=undef
+
+## main
+
+# try hard to find medium
+
+while [[ $MEDIUM == "undef" ]]
+do
+  countmedia=$( ls -1d $MEDIADIR/* 2> /dev/null | wc -l)
+  if [[ $countmedia -le 0 ]]
+  then
+    >&2 echo " No backup medium found. Please connect medium and press"
+    >&2 echo "   r: to retry"
+    >&2 echo "   a: to abort"
+    >&2 echo -n " ?"
+    read answer
+    case "$answer" in 
+      a) MEDIUM="no" ;;
+      r) true ;;
+      *) true ;;
+    esac
+  else
+    MEDIUM=yes
+  fi
+done
+
+is_writable () {
+  BASEDIR=$1
+  WRITETEST=$( mktemp $BASEDIR/touchme.XXXXXX 2> /dev/null )
+  if [[ -r $WRITETEST ]]
+  then
+    rm $WRITETEST
+    return 0
+  else
+    return 1
+  fi
+}
+
+is_restic_vault () {
+  BASEDIR=$1
+  goodcount=0
+  badcount=0
+  for shortdir in data index keys locks snapshots
+  do 
+    dirname="${BASEDIR}/${REPOBASEDIR}/$shortdir"
+    if [[ ( -r "$dirname" ) && ( -d "$dirname" ) ]]
+    then
+      goodcount=$(( goodcount + 1 ))
+    else 
+      badcount=$(( badcount + 1 ))
+    fi
+  done
+  for shortfile in config
+  do 
+    filename="${BASEDIR}/${REPOBASEDIR}/$shortfile"
+    if [[ ( -r "$filename" ) && ( -s "$filename" ) ]]
+    then
+      goodcount=$(( goodcount + 1 ))
+    else 
+      badcount=$(( badcount + 1 ))
+    fi
+  done
+  return $badcount
+}
+
+
+if [[ "$MEDIUM" == "yes" ]]
+then
+  TMPFILE=$( mktemp -p /tmp media_for_restic.XXXXX )
+  ls -1d $MEDIADIR/* 2> /dev/null | while read dir
+  do
+    echo -n "M" >> $TMPFILE
+    if is_writable $dir
+    then
+      echo -n "W" >> $TMPFILE
+    else
+      echo -n "w" >> $TMPFILE
+    fi
+    if is_restic_vault $dir
+    then
+      echo -n "R" >> $TMPFILE
+    else
+      echo -n "r" >> $TMPFILE
+    fi
+    echo " $dir" >> $TMPFILE
+  done
+  cat $TMPFILE
+  rm $TMPFILE
+else
+  echo "m-- none"
+fi

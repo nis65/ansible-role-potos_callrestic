@@ -2,18 +2,20 @@
 
 argument_specs:
   main:
-    short_description: Role to use as template for new roles of Potos Linux Clients.
+    short_description: Variable checks for callrestic role
     options:
-      potos_template_example_var:
+      potos_callrestic_url:
         description:
-          - Example variable
+          - URL to fetch the zipped restic binary from 
         type: str
-        required: no
-        default: 'hello world!'
-      potos_template_example_list:
+        required: yes
+      potos_callrestic_dest:
         description:
-          - List of items used for action xyz
-        type: list
-        elements: str
-        required: no
-        default: []
+          - Temporary location for downloaded file
+        type: str
+        required: yes
+      potos_callrestic_sha256sum:
+        description:
+          - the sha256sum of the zipped restic binary
+        type: str
+        required: yes

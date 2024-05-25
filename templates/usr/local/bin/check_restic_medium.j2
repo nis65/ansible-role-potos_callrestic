@@ -1,11 +1,11 @@
 #!/usr/bin/bash
 # {{ ansible_managed }}
-# searches all media found below $MEDIADIR and outputs on stdout 
+# searches all media found below $MEDIADIR and outputs on stdout
 # a line per medium, e.g.:
 #
 # MWR /media/nicolas/9016-4EF8
 # MWr /media/nicolas/newusbstick
-# 
+#
 # the first three letters are flags for "M"edia, "W"ritable and "R"restic repo.
 # UPPERCASE means yes, lowercase means no.
 
@@ -49,7 +49,7 @@ do
     >&2 echo "   a: to abort"
     >&2 echo -n " ?"
     read answer
-    case "$answer" in 
+    case "$answer" in
       a) MEDIUM="no" ;;
       r) true ;;
       *) true ;;
@@ -76,22 +76,22 @@ is_restic_vault () {
   goodcount=0
   badcount=0
   for shortdir in data index keys locks snapshots
-  do 
+  do
     dirname="${BASEDIR}/${REPOBASEDIR}/$shortdir"
     if [[ ( -r "$dirname" ) && ( -d "$dirname" ) ]]
     then
       goodcount=$(( goodcount + 1 ))
-    else 
+    else
       badcount=$(( badcount + 1 ))
     fi
   done
   for shortfile in config
-  do 
+  do
     filename="${BASEDIR}/${REPOBASEDIR}/$shortfile"
     if [[ ( -r "$filename" ) && ( -s "$filename" ) ]]
     then
       goodcount=$(( goodcount + 1 ))
-    else 
+    else
       badcount=$(( badcount + 1 ))
     fi
   done

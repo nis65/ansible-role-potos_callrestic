@@ -1,9 +1,55 @@
 ---
 
-- name: Example task to deploy a template
+- name: Exit play if os_family is not Debian
+  ansible.builtin.fail:
+    msg: "ERROR: os_family of host {{ inventory_hostname }} is not Debian"
+  when: ansible_facts['os_family'] != "Debian"
+
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name:
+      - bzip2
+      - pwgen
+      - rsync
+      - udisks2
+    state: present
+
+- name: Download restic from github
+  ansible.builtin.get_url:
+    url: "{{ potos_callrestic_url }}"
+    checksum: "sha256:{{ potos_callrestic_sha256sum }}"
+    dest: "{{ potos_callrestic_dest }}"
+    mode: "0640"
+  register: newdownload
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Unpack downloaded file
+  ansible.builtin.shell:
+    cmd: "bzcat {{ potos_callrestic_dest }} > /usr/local/bin/restic; chmod a+x /usr/local/bin/restic"
+  changed_when: true
+  when: newdownload.changed
+
+- name: Install wrapper scripts
   ansible.builtin.template:
-    src: 'potos.example.j2'
-    dest: '/potos.example'
-    owner: root
-    group: root
-    mode: '0755'
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - src: "usr/local/bin/check_restic_medium.j2"
+      dest: "/usr/local/bin/check_restic_medium"
+      mode: "755"
+    - src: "usr/local/bin/call_restic.j2"
+      dest: "/usr/local/bin/call_restic"
+      mode: "755"
+
+- name: Is argos installed
+  ansible.builtin.stat:
+    path: /usr/local/src/potos_argos
+  register: argosdir
+
+- name: Install argos script when useful
+  ansible.builtin.template:
+    src: "usr/local/src/potos_argos/restic.j2"
+    dest: "/usr/local/src/potos_argos/restic"
+    mode: "755"
+  when: argosdir.stat.exists

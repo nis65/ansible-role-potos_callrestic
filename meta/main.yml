@@ -2,9 +2,9 @@
 
 galaxy_info:
   author: Project Potos
-  description: ole to use as template for new roles of Potos Linux Clients.
+  description: Role to use restic to backup home directory
   company: Project Potos
-  role_name: potos_wallpaper
+  role_name: potos_callrestic
   namespace: projectpotos
   license: GPL-3.0-only
   min_ansible_version: '2.12'
@@ -15,6 +15,6 @@ galaxy_info:
         - jammy
   galaxy_tags:
     - potos
-    - template
+    - restic
 
 dependencies: []

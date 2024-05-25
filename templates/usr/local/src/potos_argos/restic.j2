@@ -1,0 +1,10 @@
+#!/usr/bin/bash
+# {{ ansible_managed }}
+echo "restic"
+echo "---"
+echo "backup | terminal=true bash='call_restic -b'"
+echo "restore | terminal=true bash='call_restic -r'"
+echo "---"
+echo "initialize | terminal=true bash='call_restic -i'"
+echo "cleanup | terminal=true bash='call_restic -u; call_restic -h'"
+echo "view | terminal=true bash='call_restic -m'"

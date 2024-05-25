@@ -1,0 +1,306 @@
+#!/usr/bin/bash
+# {{ ansible_managed }}
+
+RESTIC=/usr/local/bin/restic
+WAIT_RESTIC_MOUNT_SECONDS=10
+export RESTIC_PASSWORD_FILE=~/.config/resticpw
+
+REPOBASEDIR="restic_${USER}"
+
+usage () {
+echo ""
+echo "usage:"
+echo ""
+echo "$0 -[i][b][h][r][m]"
+echo ""
+echo " i: initialize a new medium to be used as restic repo"
+echo " b: backup (i.e. create a new snapshot)"
+echo " h: housekeeping: remove unneeded snapshots from medium"
+echo " u: unlock: needed to remove stale locks"
+echo " r: restore: overwrite all data in your home directory!"
+echo " l: list: show all files in latest snapshot"
+echo " m: mount: mount medium to view all snapshots and files"
+exit 1
+}
+
+EXACTLYONE=0
+MODE=none
+while getopts ibhurlm option
+do
+  case $option in
+    i) MODE=INIT; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
+    b) MODE=BACKUP; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
+    h) MODE=HOUSEKEEPING; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
+    u) MODE=UNLOCK; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
+    r) MODE=RESTORE; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
+    l) MODE=LIST; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
+    m) MODE=MOUNT; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
+    *) usage ;;
+  esac
+done
+
+if [[ ( "$MODE" == "none" ) || ( $EXACTLYONE -ne 1 ) ]]
+then
+  echo "Need to select exactly one of: i b h r l m"
+  usage
+fi
+
+initialize_pw () {
+  CREATENEW=yes
+  if [[ -r $RESTIC_PASSWORD_FILE ]]
+  then
+    echo "Do you really want to overwrite the existing password?"
+    echo "Type 'yes' to do so, otherwise the old one will be kept"
+    echo -n "?"
+    read answer
+    if [[ "${answer}" == "yes" ]]
+    then
+      echo "$(date): Overwriting existing password in $RESTIC_PASSWORD_FILE"
+      CREATENEW=yes
+    else
+      echo "$(date): Keeping existing password in $RESTIC_PASSWORD_FILE"
+      CREATENEW=no
+    fi
+  fi
+  if [[ "${CREATENEW}" == "yes" ]]
+  then
+    echo -n $( pwgen 40 1 ) > $RESTIC_PASSWORD_FILE
+    echo "$(date): Created new random password in $RESTIC_PASSWORD_FILE"
+  fi
+  cat $RESTIC_PASSWORD_FILE
+  echo ""
+}
+
+initialize_repo () {
+  repo="$1"
+  echo "EXEC: $RESTIC init --repo $repo"
+  $RESTIC init --repo $repo 2>&1
+}
+
+backup_repo () {
+  repo="$1"
+  echo "EXEC: $RESTIC backup -x --repo $repo -v $HOME --exclude ..."
+  $RESTIC backup -x --repo $repo -v $HOME \
+    --exclude nobackup                    \
+    --exclude snap/chromium/common/.cache \
+    --exclude snap/firefox/common/.cache  \
+    --exclude .googleearth/Cache          \
+    --exclude .cache                      2>&1
+}
+
+forget_and_prune_repo () {
+  repo="$1"
+  echo "EXEC: $RESTIC forget --repo $repo -d 14 -w 12 -m 12 -y 1"
+  $RESTIC forget --repo $repo -d 14 -w 12 -m 12 -y 1 2>&1
+  echo "EXEC: $RESTIC prune --repo $repo"
+  $RESTIC prune --repo $repo 2>&1
+}
+
+unlock_repo () {
+  repo="$1"
+  echo "EXEC: $RESTIC unlock --repo $repo"
+  $RESTIC unlock --repo $repo 2>&1
+}
+
+list_repo () {
+  repo="$1"
+  echo "EXEC: $RESTIC ls --repo $repo latest"
+  $RESTIC ls --repo $repo latest 2>&1
+}
+
+shutdown_apps () {
+  for i in claws-mail soffice.bin oosplash firefox chromium-browser \
+           chromium-browser-sandbox chrome nautilus
+  do
+    killall $i
+  done
+}
+
+ejectmedia () {
+  mountpoint="$1"
+  device=$( LANG=C df -k $mountpoint | egrep -v ^Filesystem | awk '{ print $1 }' )
+  echo "EXEC: udisksctl unmount -b $device"
+  udisksctl unmount -b $device
+  echo "EXEC: udisksctl power-off -b $device"
+  udisksctl power-off -b $device
+}
+
+restore_repo () {
+  # There is no restic restore --sync flag yet, need workaround with
+  # rsync, see https://github.com/restic/restic/issues/2662
+
+  repo="$1"
+  MOUNTDIR=$( mktemp -d $HOME/restic_mount_XXXXXX )
+  echo "EXEC: $RESTIC mount --repo $repo $MOUNTDIR"
+  $RESTIC mount --repo $repo $MOUNTDIR 2>&1 | grep -Ev "maybe already umounted or still in use" &
+  LATESTSNAPSHOT=${MOUNTDIR}/snapshots/latest${HOME}
+
+  # Wait for restic mount
+  mounted=no
+  trycount=0
+  while [[ $mounted == "no" ]]
+  do
+    echo -n "."
+    if ls -l $LATESTSNAPSHOT > /dev/null 2>&1
+    then
+      mounted=yes
+    else
+      trycount=$(( trycount + 1 ))
+      if [[ $trycount -ge $WAIT_RESTIC_MOUNT_SECONDS ]]
+      then
+	echo ""
+	echo "giving up after $trycount seconds, maybe better to logout to clean up"
+        rm $AVAILABLEMEDIA
+	exit 1
+      fi
+      sleep 1
+    fi
+  done
+  echo ""
+
+  ls -ld $LATESTSNAPSHOT
+  echo "Restoring from latest snapshot $LATESTSNAPSHOT to $HOME"
+
+  rsync -avx --delete                     \
+    --exclude nobackup                    \
+    --exclude snap/chromium/common/.cache \
+    --exclude snap/firefox/common/.cache  \
+    --exclude .googleearth/Cache          \
+    --exclude .cache                      \
+    ${LATESTSNAPSHOT}/ $HOME               2>&1
+
+  echo "EXEC: umount $MOUNTDIR"
+  umount $MOUNTDIR
+  wait
+  echo "umount $MOUNTDIR success"
+  rmdir $MOUNTDIR
+}
+
+force_logout () {
+   echo ""
+   echo "Remove Backup medium and press enter to logout (needed after restore)"
+   read wait
+   gnome-session-quit --logout --no-prompt --force
+}
+
+fix_claws_config () {
+  CLAWS_DIR=~/.claws-mail
+  # mail is neither downloaded nor removed automatically
+  # after a restore, even if this was the case on the source
+
+  CLAWS_ACCOUNTRC=$CLAWS_DIR/accountrc
+  if [[ -w $CLAWS_ACCOUNTRC ]]
+  then
+    echo "updating $CLAWS_ACCOUNTRC"
+    ed -s $CLAWS_ACCOUNTRC << EOF
+g/^ *remove_mail=.*$/s/^ *\(remove_mail\)=.*$/\1=0/g
+g/^ *message_leave_time=.*$/s/^ *\(message_leave_time\)=.*$/\1=0/g
+g/^ *message_leave_hour=.*$/s/^ *\(message_leave_hour\)=.*$/\1=0/g
+w
+q
+EOF
+  else
+    echo "cannot update $CLAWS_ACCOUNTRC"
+  fi
+
+  CLAWSRC=$CLAWS_DIR/clawsrc
+  if [[ -w $CLAWSRC ]]
+  then
+    echo "updating $CLAWSRC"
+    ed -s $CLAWSRC << EOF
+g/^ *autochk_newmail=.*$/s/^ *\(autochk_newmail\)=.*$/\1=0/g
+g/^ *check_on_startup=.*$/s/^ *\(check_on_startup\)=.*$/\1=0/g
+w
+q
+EOF
+  else
+    echo "cannot update $CLAWSRC"
+  fi
+}
+
+mount_repo () {
+  repo="$1"
+  MOUNTDIR=$( mktemp -d $HOME/restic_mount_XXXXXX )
+  SNAPSHOTSDIR=${MOUNTDIR}/snapshots
+  (
+    while ! ls -l $SNAPSHOTSDIR > /dev/null 2>&1
+    do
+      sleep 1
+    done
+    nautilus -w $SNAPSHOTSDIR > /dev/null 2>&1
+  ) &
+  echo "EXEC: $RESTIC mount --repo $repo $MOUNTDIR"
+  $RESTIC mount --repo $repo $MOUNTDIR 2>&1 | grep -Ev "maybe already umounted or still in use"
+  # just to be sure
+  echo "EXEC: umount $MOUNTDIR"
+  umount $MOUNTDIR
+  rmdir $MOUNTDIR
+}
+
+### FIND MEDIUM
+
+AVAILABLEMEDIA=$( mktemp -p /tmp medialist.XXXXXX )
+if ! check_restic_medium $REPOBASEDIR > $AVAILABLEMEDIA
+then
+  echo "Failed to check for media, probably \$USER not set?"
+  rm $AVAILABLEMEDIA
+  exit 1
+fi
+
+case $MODE in
+  INIT                       ) filter="MW." ;;
+  BACKUP|HOUSEKEEPING|UNLOCK ) filter="MWR" ;;
+  RESTORE|LIST|MOUNT         ) filter="M.R" ;;
+esac
+
+SELECTEDFLAGS=$( cat $AVAILABLEMEDIA | grep -E "^$filter" | sort | head -1 | awk ' { print $1 } ')
+SELECTEDMEDIA=$( cat $AVAILABLEMEDIA | grep -E "^$filter" | sort | head -1 | awk ' { print $2 } ')
+
+if [[ -z "$SELECTEDMEDIA" ]]
+then
+  echo "$(date): No suitable media for mode $MODE (matching filter $filter) found:"
+  cat $AVAILABLEMEDIA
+  rm $AVAILABLEMEDIA
+  exit 1
+fi
+
+### DO THE WORK
+
+echo "$(date): Starting in $MODE mode on $SELECTEDMEDIA"
+
+case $MODE in
+  INIT ) if [[ "${SELECTEDFLAGS:2:1}" == "R" ]]
+         then
+           echo "This looks like an already initialized restic repo. Really reinitialize?"
+           echo "Type 'yes' to go on"
+           echo -n "?"
+           read answer
+           if [[ "${answer}" != "yes" ]]
+             then
+             echo "$(date): You typed '$answer' and not 'yes', refusing to reinitialize"
+             rm $AVAILABLEMEDIA
+             exit 1
+           fi
+         fi
+         initialize_pw
+         initialize_repo ${SELECTEDMEDIA}/${REPOBASEDIR}
+         ;;
+  BACKUP )
+	 shutdown_apps
+	 backup_repo ${SELECTEDMEDIA}/${REPOBASEDIR}
+	 ejectmedia ${SELECTEDMEDIA}
+	 ;;
+  RESTORE )
+	 shutdown_apps
+     	 restore_repo ${SELECTEDMEDIA}/${REPOBASEDIR}
+         fix_claws_config
+	 ejectmedia ${SELECTEDMEDIA}
+         force_logout
+	 ;;
+  HOUSEKEEPING ) forget_and_prune_repo ${SELECTEDMEDIA}/${REPOBASEDIR} ;;
+  UNLOCK )       unlock_repo ${SELECTEDMEDIA}/${REPOBASEDIR} ;;
+  LIST )         list_repo ${SELECTEDMEDIA}/${REPOBASEDIR} ;;
+  MOUNT )        mount_repo ${SELECTEDMEDIA}/${REPOBASEDIR} ;;
+esac
+
+rm $AVAILABLEMEDIA

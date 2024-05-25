@@ -5,9 +5,9 @@
   gather_facts: no
 
   tasks:
-    - name: check if template has been applied
+    - name: check if wrapper installed
       ansible.builtin.stat:
-        path: "/potos.example"
+        path: "/usr/local/bin/call_restic"
       register: out
       changed_when: false
       failed_when:

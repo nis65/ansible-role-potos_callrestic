@@ -13,7 +13,8 @@ echo "usage:"
 echo ""
 echo "$0 -[i][b][h][r][m]"
 echo ""
-echo " i: initialize a new medium to be used as restic repo"
+echo " i: (re) initialize a medium to be used as restic repo (dangerous)"
+echo " x: manually set new password (dangerous)"
 echo " b: backup (i.e. create a new snapshot)"
 echo " h: housekeeping: remove unneeded snapshots from medium"
 echo " u: unlock: needed to remove stale locks"
@@ -25,10 +26,11 @@ exit 1
 
 EXACTLYONE=0
 MODE=none
-while getopts ibhurlm option
+while getopts ixbhurlm option
 do
   case $option in
     i) MODE=INIT; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
+    x) MODE=SETPASSWORD; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
     b) MODE=BACKUP; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
     h) MODE=HOUSEKEEPING; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
     u) MODE=UNLOCK; EXACTLYONE=$(( EXACTLYONE + 1 )) ;;
@@ -56,6 +58,8 @@ initialize_pw () {
     if [[ "${answer}" == "yes" ]]
     then
       echo "$(date): Overwriting existing password in $RESTIC_PASSWORD_FILE"
+      cat $RESTIC_PASSWORD_FILE
+      echo ""
       CREATENEW=yes
     else
       echo "$(date): Keeping existing password in $RESTIC_PASSWORD_FILE"
@@ -64,8 +68,21 @@ initialize_pw () {
   fi
   if [[ "${CREATENEW}" == "yes" ]]
   then
-    echo -n $( pwgen 40 1 ) > $RESTIC_PASSWORD_FILE
-    echo "$(date): Created new random password in $RESTIC_PASSWORD_FILE"
+    echo "Do you want to enter the encryption password manually (unsafe)?"
+    echo "Type 'yes' to do so, otherwise the system will generate a safe one".
+    echo -n "?"
+    read answer
+    if [[ "${answer}" == "yes" ]]
+    then
+      echo "Enter new encryption password: "
+      read answer
+      echo -n "$answer" > $RESTIC_PASSWORD_FILE
+      echo "$(date): Stored new password in $RESTIC_PASSWORD_FILE"
+    else
+      echo -n $( pwgen 40 1 ) > $RESTIC_PASSWORD_FILE
+      echo "$(date): Created new random password in $RESTIC_PASSWORD_FILE"
+    fi
+    chmod 600 $RESTIC_PASSWORD_FILE
   fi
   cat $RESTIC_PASSWORD_FILE
   echo ""
@@ -150,6 +167,7 @@ restore_repo () {
       then
 	echo ""
 	echo "giving up after $trycount seconds, maybe better to logout to clean up"
+        rmdir $MOUNTDIR
         rm $AVAILABLEMEDIA
 	exit 1
       fi
@@ -240,15 +258,21 @@ mount_repo () {
 ### FIND MEDIUM
 
 AVAILABLEMEDIA=$( mktemp -p /tmp medialist.XXXXXX )
-if ! check_restic_medium $REPOBASEDIR > $AVAILABLEMEDIA
+if [[ $MODE != SETPASSWORD ]]
 then
-  echo "Failed to check for media, probably \$USER not set?"
-  rm $AVAILABLEMEDIA
-  exit 1
+  if ! check_restic_medium $REPOBASEDIR > $AVAILABLEMEDIA
+  then
+    echo "Failed to check for media, probably \$USER not set?"
+    rm $AVAILABLEMEDIA
+    exit 1
+  fi
+else
+  echo "m-- none" > $AVAILABLEMEDIA
 fi
 
 case $MODE in
   INIT                       ) filter="MW." ;;
+  SETPASSWORD                ) filter="..." ;;
   BACKUP|HOUSEKEEPING|UNLOCK ) filter="MWR" ;;
   RESTORE|LIST|MOUNT         ) filter="M.R" ;;
 esac
@@ -285,18 +309,19 @@ case $MODE in
          initialize_pw
          initialize_repo ${SELECTEDMEDIA}/${REPOBASEDIR}
          ;;
+  SETPASSWORD ) initialize_pw ;;
   BACKUP )
 	 shutdown_apps
 	 backup_repo ${SELECTEDMEDIA}/${REPOBASEDIR}
 	 ejectmedia ${SELECTEDMEDIA}
 	 ;;
   RESTORE )
-	 shutdown_apps
-     	 restore_repo ${SELECTEDMEDIA}/${REPOBASEDIR}
+         shutdown_apps
+         restore_repo ${SELECTEDMEDIA}/${REPOBASEDIR}
          fix_claws_config
-	 ejectmedia ${SELECTEDMEDIA}
+         ejectmedia ${SELECTEDMEDIA}
          force_logout
-	 ;;
+         ;;
   HOUSEKEEPING ) forget_and_prune_repo ${SELECTEDMEDIA}/${REPOBASEDIR} ;;
   UNLOCK )       unlock_repo ${SELECTEDMEDIA}/${REPOBASEDIR} ;;
   LIST )         list_repo ${SELECTEDMEDIA}/${REPOBASEDIR} ;;

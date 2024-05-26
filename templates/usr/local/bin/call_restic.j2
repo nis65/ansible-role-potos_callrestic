@@ -316,6 +316,16 @@ case $MODE in
 	 ejectmedia ${SELECTEDMEDIA}
 	 ;;
   RESTORE )
+         echo "This will overwrite your home directory. Are you sure?"
+         echo "Type 'yes' to go on"
+         echo -n "?"
+         read answer
+         if [[ "${answer}" != "yes" ]]
+         then
+           echo "$(date): You typed '$answer' and not 'yes', refusing to restore"
+           rm $AVAILABLEMEDIA
+           exit 1
+         fi
          shutdown_apps
          restore_repo ${SELECTEDMEDIA}/${REPOBASEDIR}
          fix_claws_config

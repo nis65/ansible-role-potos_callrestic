@@ -1,10 +1,18 @@
 #!/usr/bin/bash
 # {{ ansible_managed }}
+# I wanted to use just colors first, but they need an emoji in the same
+# line, now I use just emojis. See https://github.com/p-e-w/argos/issues/112
+
+SLEEPEXIT="echo closing...; sleep 3; exit"
+MSGNOEXIT="echo Press Ctrl-D to close window"
+
 echo "restic"
 echo "---"
-echo "backup | terminal=true bash='call_restic -b'"
-echo "restore | terminal=true bash='call_restic -r'"
+echo "😇 backup | terminal=true bash='call_restic -b; $SLEEPEXIT'"
 echo "---"
-echo "initialize | terminal=true bash='call_restic -i'"
-echo "cleanup | terminal=true bash='call_restic -u; call_restic -h'"
-echo "view | terminal=true bash='call_restic -m'"
+echo "🧹 cleanup | terminal=true bash='call_restic -u; call_restic -h; $SLEEPEXIT'"
+echo "🔎 view | terminal=true bash='call_restic -m; $SLEEPEXIT'"
+echo "---"
+echo "🎉 restore | terminal=true bash='call_restic -r; $SLEEPEXIT'"
+echo "🔑 set encryption key | terminal=true bash='call_restic -x; $MSGNOEXIT'"
+echo "⚡ initialize backup medium and encryption key | terminal=true bash='call_restic -i; $SLEEPEXIT'"

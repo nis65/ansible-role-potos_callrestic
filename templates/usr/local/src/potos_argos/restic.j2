@@ -3,16 +3,17 @@
 # I wanted to use just colors first, but they need an emoji in the same
 # line, now I use just emojis. See https://github.com/p-e-w/argos/issues/112
 
-SLEEPEXIT="echo closing...; sleep 3; exit"
-MSGNOEXIT="echo Press Ctrl-D to close window"
+WAITEXIT="echo Press Enter to close window; read a; exit"
 
 echo "restic"
 echo "---"
-echo "😇 backup | terminal=true bash='call_restic -b; $SLEEPEXIT'"
+echo "😇 backup | terminal=true bash='call_restic -b; $WAITEXIT'"
 echo "---"
-echo "🧹 cleanup | terminal=true bash='call_restic -u; call_restic -h; $SLEEPEXIT'"
-echo "🔎 view | terminal=true bash='call_restic -m; $SLEEPEXIT'"
+echo "🧹 cleanup | terminal=true bash='call_restic -u; call_restic -h; $WAITEXIT'"
+echo "🔎 view | terminal=true bash='call_restic -m; $WAITEXIT'"
 echo "---"
-echo "🎉 restore | terminal=true bash='call_restic -r; $SLEEPEXIT'"
-echo "🔑 set encryption key | terminal=true bash='call_restic -x; $MSGNOEXIT'"
-echo "⚡ initialize backup medium and encryption key | terminal=true bash='call_restic -i; $SLEEPEXIT'"
+echo "🎉 restore | terminal=true bash='call_restic -r; $WAITEXIT'"
+echo "🔑 set encryption key | terminal=true bash='call_restic -x; $WAITEXIT'"
+echo "⚡ initialize backup medium and encryption key | terminal=true bash='call_restic -i; $WAITEXIT'"
+echo "---"
+echo "🔄 update this menu | terminal=true bash='cp /usr/local/src/potos_argos/restic ~/.config/argos; $WAITEXIT'"
